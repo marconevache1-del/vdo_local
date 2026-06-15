@@ -19,16 +19,28 @@ class WebRTCService {
 
   // 2. Inizializziamo il tubo (Peer Connection)
   Future<void> initConnection() async {
-    // Una configurazione vuota degli 'iceServers' forza WebRTC a non usare
-    // server cloud (STUN/TURN), ma a cercare solo connessioni sulla rete locale.
+    // Aggiungiamo i server STUN di Google. Funzionano come le "Pagine Gialle"
+    // per permettere al PC e al Telefono di trovare i loro veri IP superando i blocchi.
     Map<String, dynamic> configuration = {
-      'iceServers': []
+      'iceServers': [
+        {
+          'urls': [
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302'
+          ]
+        }
+      ]
     };
 
     _peerConnection = await createPeerConnection(configuration);
 
-    // Quando WebRTC trova una via d'uscita sulla rete (ICE Candidate), la spedisce via walkie-talkie
+    // Sensore di stato della connessione P2P
+    _peerConnection!.onIceConnectionState = (RTCIceConnectionState state) {
+      print(">>> STATO CONNESSIONE P2P: $state");
+    };
+
     _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
+      print(">>> 🚀 STO INVIANDO UN MIO PERCORSO DI RETE (ICE)!"); // <-- AGGIUNGI QUESTO
       signaling.send({
         'type': 'candidate',
         'candidate': candidate.candidate,
@@ -37,8 +49,9 @@ class WebRTCService {
       });
     };
 
-    // Quando dal tubo esce un flusso video (evento 'onTrack')
+    // Quando dal tubo esce finalmente il flusso video
     _peerConnection!.onTrack = (RTCTrackEvent event) {
+      print(">>> 🎬 TRACCIA VIDEO RICEVUTA DAL TUBO!");
       if (event.streams.isNotEmpty && onRemoteStream != null) {
         onRemoteStream!(event.streams[0]);
       }
@@ -52,16 +65,32 @@ class WebRTCService {
     });
   }
 
-  // 4. (Solo per Trasmettitore) Avvia la trattativa creando un'Offerta (SDP)
+  // 4. (Solo per Ricevitore) Avvia la trattativa creando un'Offerta (SDP)
   Future<void> createOffer() async {
-    RTCSessionDescription offer = await _peerConnection!.createOffer();
-    await _peerConnection!.setLocalDescription(offer);
-    
-    // Invia la scheda tecnica via walkie-talkie
-    signaling.send({
-      'type': 'offer',
-      'sdp': offer.sdp,
-    });
+    try {
+      // 1. STANDARD MODERNO: Aggiungiamo un ricetrasmettitore in sola ricezione (RecvOnly)
+      await _peerConnection!.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
+      );
+
+      // 2. Creiamo l'offerta senza i vecchi vincoli
+      RTCSessionDescription offer = await _peerConnection!.createOffer();
+      
+      // 3. Registriamo l'offerta localmente (QUESTO E' IL COMANDO CHE AVVIA LA RICERCA DEI PERCORSI ICE)
+      await _peerConnection!.setLocalDescription(offer);
+      
+      // 4. Inviamo l'offerta via walkie-talkie
+      signaling.send({
+        'type': 'offer',
+        'sdp': offer.sdp,
+      });
+      print(">>> OFFERTA CREATA E INVIATA CON SUCCESSO");
+
+    } catch (e) {
+      // Se qualcosa si rompe qui, ora lo vedremo chiaramente!
+      print(">>> ❌ ERRORE CRITICO DURANTE LA CREAZIONE DELL'OFFERTA: $e");
+    }
   }
 
   // 5. (Solo per Ricevitore) Risponde all'Offerta creando un'Answer (SDP)
@@ -89,12 +118,14 @@ class WebRTCService {
       
     } else if (type == 'answer') {
       // Se ricevo una risposta, la registro
+      print(">>> BOOM! RISPOSTA RICEVUTA DAL TELEFONO!"); // <-- Aggiungi questo
       await _peerConnection!.setRemoteDescription(
         RTCSessionDescription(message['sdp'], type),
       );
       
     } else if (type == 'candidate') {
       // Se ricevo un percorso di rete, lo aggiungo al navigatore
+      print(">>> 📍 RICEVUTO PERCORSO DI RETE DALL'ALTRO TELEFONO!"); // <-- AGGIUNGI QUESTO
       await _peerConnection!.addCandidate(
         RTCIceCandidate(
           message['candidate'],
