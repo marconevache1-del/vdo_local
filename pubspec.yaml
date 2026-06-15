@@ -1,0 +1,27 @@
+name: vdo_local
+description: App per streaming video locale a bassa latenza.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Aggiornato alle versioni moderne compatibili con Flutter 3.40+
+  flutter_webrtc: ^1.5.0
+  shelf: ^1.4.2
+  shelf_web_socket: ^3.0.0
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
