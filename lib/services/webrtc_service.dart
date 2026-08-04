@@ -19,17 +19,9 @@ class WebRTCService {
 
   // 2. Inizializziamo il tubo (Peer Connection)
   Future<void> initConnection() async {
-    // Aggiungiamo i server STUN di Google. Funzionano come le "Pagine Gialle"
-    // per permettere al PC e al Telefono di trovare i loro veri IP superando i blocchi.
+    // Configurazione 100% offline per rete locale (nessun server esterno)
     Map<String, dynamic> configuration = {
-      'iceServers': [
-        {
-          'urls': [
-            'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302'
-          ]
-        }
-      ]
+      'iceServers': []
     };
 
     _peerConnection = await createPeerConnection(configuration);

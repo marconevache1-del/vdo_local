@@ -73,28 +73,35 @@ class SignalingService {
     _server?.close();
   }
 
-  // Ricerca automatica dell'indirizzo IP locale (IPv4) del telefono
+  // Ricerca automatica dell'indirizzo IP locale ottimizzata per Hotspot
   Future<String?> _getLocalIp() async {
     try {
       final interfaces = await NetworkInterface.list(
           type: InternetAddressType.IPv4, includeLoopback: false);
           
+      // 1. PRIORITÀ HOTSPOT: Cerchiamo prima gli IP tipici degli Hotspot (Android e iOS)
       for (var interface in interfaces) {
         for (var addr in interface.addresses) {
-          // Filtriamo gli IP per trovare quelli tipici delle reti locali (WiFi)
-          if (addr.address.startsWith('192.168.') || addr.address.startsWith('10.')) {
+          if (addr.address.startsWith('192.168.43.') || addr.address.startsWith('172.20.10.')) {
              return addr.address;
           }
         }
       }
       
-      // Fallback: se la rete ha una classe IP diversa, prende il primo disponibile
-      if (interfaces.isNotEmpty && interfaces.first.addresses.isNotEmpty) {
-         return interfaces.first.addresses.first.address;
+      // 2. RETE STANDARD: Se non trova hotspot, prende un IP locale generico (es. Wi-Fi di casa)
+      for (var interface in interfaces) {
+        for (var addr in interface.addresses) {
+          if (addr.address.startsWith('192.168.') || addr.address.startsWith('10.') || addr.address.startsWith('172.')) {
+             return addr.address;
+          }
+        }
       }
     } catch (e) {
-      print("Errore nella ricerca dell'IP: $e");
+      print(">>> Errore nella ricerca dell'IP: $e");
     }
-    return null;
+    
+    // 3. IL TRUCCO DI FALLBACK: Se Android nasconde l'interfaccia (succede spesso con l'hotspot attivo),
+    // forziamo l'IP di default che Android assegna SEMPRE a se stesso come router.
+    return '192.168.43.1'; 
   }
 }
