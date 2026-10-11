@@ -1,0 +1,39 @@
+name: Build iOS (unsigned IPA)
+
+# Solo avvio manuale: non consuma minuti a ogni push.
+# Lancio da PC:  .\scripts\ios-build.ps1
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Versione Flutter
+        run: flutter --version
+
+      - name: Dipendenze
+        run: flutter pub get
+
+      - name: Build iOS senza firma
+        run: flutter build ios --release --no-codesign
+
+      - name: Crea IPA non firmato
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
+          zip -qry vdo_local_claude.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vdo_local_claude-ipa
+          path: vdo_local_claude.ipa
+          retention-days: 14

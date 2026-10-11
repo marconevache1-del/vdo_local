@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
+import '../widgets/metal_button.dart';
 import 'camera_screen.dart';
 import 'viewer_screen.dart';
 
@@ -7,65 +9,64 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Scaffold è l'impalcatura standard di una schermata (fornisce lo sfondo, la barra in alto, ecc.)
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('VDO Local'),
-        centerTitle: true,
-      ),
-      // Padding aggiunge spazio attorno ai bordi
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        // Column mette gli elementi in colonna (uno sotto l'altro)
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center, // Centra tutto verticalmente
-          crossAxisAlignment: CrossAxisAlignment.stretch, // Allarga i bottoni per tutta la larghezza
-          children: [
-            
-            // --- BOTTONE TRASMETTI ---
-            ElevatedButton.icon(
-              icon: const Icon(Icons.camera_alt, size: 32),
-              label: const Text('TRASMETTI', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                backgroundColor: Colors.blueAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16), // Bordi arrotondati
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.6),
+            radius: 1.3,
+            colors: [Color(0xFF2A0A10), AppColors.background],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (r) => const LinearGradient(
+                        colors: [AppColors.steel, Colors.white, AppColors.steel],
+                      ).createShader(r),
+                      child: const Text('VDO LOCAL',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 40,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 8,
+                              color: Colors.white)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Streaming video locale a bassa latenza',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: AppColors.steel.withValues(alpha: 0.7),
+                            letterSpacing: 1)),
+                    const SizedBox(height: 56),
+                    MetalButton(
+                      icon: Icons.videocam_rounded,
+                      label: 'TRASMETTI',
+                      subtitle: 'Usa questo dispositivo come camera',
+                      onPressed: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const CameraScreen())),
+                    ),
+                    const SizedBox(height: 24),
+                    MetalButton(
+                      icon: Icons.qr_code_scanner_rounded,
+                      label: 'RICEVI',
+                      subtitle: 'Scansiona il QR e guarda il video',
+                      onPressed: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const ViewerScreen())),
+                    ),
+                  ],
                 ),
               ),
-              onPressed: () {
-                // Navigator è il "regista" che gestisce il cambio schermata
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const CameraScreen()),
-                );
-              },
             ),
-            
-            const SizedBox(height: 32), // Spazio vuoto tra i due bottoni
-            
-            // --- BOTTONE RICEVI ---
-            ElevatedButton.icon(
-              icon: const Icon(Icons.qr_code_scanner, size: 32),
-              label: const Text('RICEVI', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ViewerScreen()),
-                );
-              },
-            ),
-            
-          ],
+          ),
         ),
       ),
     );

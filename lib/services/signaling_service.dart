@@ -1,107 +1,129 @@
-import 'dart:io';
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+/// Scambia i messaggi di segnalazione (offer/answer/candidate) fra i due
+/// dispositivi tramite un WebSocket sulla rete locale.
 class SignalingService {
   HttpServer? _server;
   WebSocketChannel? _socket;
-  
-  // Questa è una "callback". Quando arriva un messaggio via radio, 
-  // lo passiamo a chi sta usando questo servizio (es. il WebRTC Service)
-  Function(dynamic message)? onMessage;
+  String? _token;
 
-  // --- 1. MODALITÀ TRASMETTITORE ---
-  // Avvia il server e restituisce l'URI da mettere nel QR Code
+  /// Chiamata per ogni messaggio JSON ricevuto.
+  Function(Map<String, dynamic> message)? onMessage;
+
+  /// Trasmettitore: un ricevitore si è collegato.
+  VoidCallback? onPeerConnected;
+
+  /// La connessione WebSocket si è chiusa.
+  VoidCallback? onClosed;
+
+  // --- Modalità trasmettitore ---
+
+  /// Avvia il server e restituisce l'URI da mettere nel QR (con token segreto).
   Future<String?> startLocalServer() async {
-    String? localIp = await _getLocalIp();
-    if (localIp == null) return null; // Nessuna connessione WiFi trovata
+    final localIp = await _getLocalIp();
+    if (localIp == null) return null;
 
-    // Creiamo il ricevitore del walkie-talkie
-    var handler = webSocketHandler((webSocket, protocol) {
+    _token = _randomToken();
+
+    final wsHandler = webSocketHandler((WebSocketChannel webSocket, _) {
+      _socket?.sink.close();
       _socket = webSocket;
-      
-      // Rimaniamo in ascolto di eventuali messaggi in entrata
-      _socket!.stream.listen((message) {
-        if (onMessage != null) {
-          onMessage!(jsonDecode(message));
-        }
-      });
+      onPeerConnected?.call();
+      webSocket.stream.listen(
+        (message) => _dispatch(message),
+        onDone: () {
+          if (_socket == webSocket) onClosed?.call();
+        },
+      );
     });
 
-    // InternetAddress.anyIPv4 forza il server ad ascoltare su TUTTE le interfacce,
-    // garantendo che riceva i messaggi anche se cambia l'IP dell'hotspot.
-    _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, 8080);
-    
-    // Restituiamo la stringa finale (es. ws://192.168.1.10:8080)
-    return 'ws://$localIp:8080'; 
-  }
+    FutureOr<Response> handler(Request request) {
+      if (request.url.queryParameters['t'] != _token) {
+        return Response.forbidden('token non valido');
+      }
+      return wsHandler(request);
+    }
 
-  // --- 2. MODALITÀ RICEVITORE ---
-  // Si connette al server usando l'URI letto dallo scanner
-  void connectTo(String uri) {
+    // Su tutte le interfacce: funziona anche con l'hotspot attivo.
+    // Porta 8080 se libera, altrimenti una a caso.
     try {
-      _socket = WebSocketChannel.connect(Uri.parse(uri));
-      _socket!.stream.listen(
-        (message) {
-          if (onMessage != null) onMessage!(jsonDecode(message));
-        },
-        onError: (error) {
-          print(">>> ERRORE WEBSOCKET: $error");
-        },
-        onDone: () {
-          print(">>> WEBSOCKET CHIUSO DAL SERVER");
-        }
-      );
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, 8080);
+    } on SocketException {
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, 0);
+    }
+    return 'ws://$localIp:${_server!.port}/?t=$_token';
+  }
+
+  // --- Modalità ricevitore ---
+
+  /// Si connette al server letto dal QR. Completa quando il socket è aperto.
+  Future<void> connectTo(String uri) async {
+    final channel = WebSocketChannel.connect(Uri.parse(uri));
+    _socket = channel;
+    channel.stream.listen(
+      (message) => _dispatch(message),
+      onError: (e) => debugPrint('Errore WebSocket: $e'),
+      onDone: () => onClosed?.call(),
+    );
+    await channel.ready;
+  }
+
+  // --- Utilità ---
+
+  void _dispatch(dynamic message) {
+    try {
+      onMessage?.call(jsonDecode(message as String) as Map<String, dynamic>);
     } catch (e) {
-      print(">>> ECCEZIONE CRITICA WEBSOCKET: $e");
+      debugPrint('Messaggio di segnalazione non valido: $e');
     }
   }
 
-  // --- 3. FUNZIONI DI UTILITÀ ---
-  // Invia un messaggio all'altro telefono
-  void send(dynamic message) {
-    if (_socket != null) {
-      _socket!.sink.add(jsonEncode(message));
-    }
+  void send(Map<String, dynamic> message) {
+    _socket?.sink.add(jsonEncode(message));
   }
 
-  // Chiude tutte le connessioni quando usciamo dalla schermata
   void stop() {
+    onClosed = null;
+    onPeerConnected = null;
     _socket?.sink.close();
-    _server?.close();
+    _server?.close(force: true);
   }
 
-  // Ricerca automatica dell'indirizzo IP locale ottimizzata per Hotspot
+  String _randomToken() {
+    final rnd = Random.secure();
+    return List.generate(16, (_) => rnd.nextInt(256).toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  /// IP locale, con priorità agli indirizzi tipici di un hotspot.
   Future<String?> _getLocalIp() async {
     try {
       final interfaces = await NetworkInterface.list(
           type: InternetAddressType.IPv4, includeLoopback: false);
-          
-      // 1. PRIORITÀ HOTSPOT: Cerchiamo prima gli IP tipici degli Hotspot (Android e iOS)
-      for (var interface in interfaces) {
-        for (var addr in interface.addresses) {
-          if (addr.address.startsWith('192.168.43.') || addr.address.startsWith('172.20.10.')) {
-             return addr.address;
-          }
-        }
+      final addrs = [for (final i in interfaces) ...i.addresses.map((a) => a.address)];
+
+      for (final a in addrs) {
+        if (a.startsWith('192.168.43.') || a.startsWith('172.20.10.')) return a;
       }
-      
-      // 2. RETE STANDARD: Se non trova hotspot, prende un IP locale generico (es. Wi-Fi di casa)
-      for (var interface in interfaces) {
-        for (var addr in interface.addresses) {
-          if (addr.address.startsWith('192.168.') || addr.address.startsWith('10.') || addr.address.startsWith('172.')) {
-             return addr.address;
-          }
+      for (final a in addrs) {
+        if (a.startsWith('192.168.') || a.startsWith('10.') || a.startsWith('172.')) {
+          return a;
         }
       }
     } catch (e) {
-      print(">>> Errore nella ricerca dell'IP: $e");
+      debugPrint('Errore nella ricerca dell\'IP: $e');
     }
-    
-    // 3. IL TRUCCO DI FALLBACK: Se Android nasconde l'interfaccia (succede spesso con l'hotspot attivo),
-    // forziamo l'IP di default che Android assegna SEMPRE a se stesso come router.
-    return '192.168.43.1'; 
+    // Android a volte nasconde l'interfaccia con l'hotspot attivo:
+    // 192.168.43.1 è l'IP che assegna a se stesso.
+    return '192.168.43.1';
   }
 }

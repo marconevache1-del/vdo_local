@@ -1,4 +1,4 @@
-name: vdo_local
+name: vdo_local_claude
 description: App per streaming video locale a bassa latenza.
 publish_to: 'none'
 
@@ -17,6 +17,9 @@ dependencies:
   shelf_web_socket: ^3.0.0
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.0.0
+  web_socket_channel: ^3.0.0
+  wakelock_plus: ^1.2.8
+  screen_brightness: ^2.0.1
 
 dev_dependencies:
   flutter_test:
